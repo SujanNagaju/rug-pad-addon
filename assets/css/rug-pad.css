@@ -1,0 +1,112 @@
+.rpa-addon {
+	box-sizing: border-box;
+	margin: 0 0 2em;
+	padding: 1.5em;
+	border: 1px solid #dcdcde;
+	border-radius: 8px;
+	background: #fafafa;
+}
+.rpa-addon *,
+.rpa-addon *::before,
+.rpa-addon *::after {
+	box-sizing: border-box;
+}
+.rpa-heading {
+	margin: 0 0 1em;
+}
+.rpa-body {
+	display: flex;
+	gap: 1.5em;
+	align-items: flex-start;
+}
+.rpa-image {
+	flex: 0 0 180px;
+	max-width: 180px;
+}
+.rpa-image img {
+	display: block;
+	width: 100%;
+	height: auto;
+	border-radius: 6px;
+}
+.rpa-details {
+	flex: 1;
+	min-width: 0;
+}
+.rpa-title {
+	margin: 0 0 0.4em;
+}
+.rpa-desc p {
+	margin: 0 0 0.8em;
+}
+.rpa-dim-label {
+	margin: 1em 0 0.5em;
+}
+.rpa-fields {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 1em 2em;
+}
+.rpa-field {
+	margin: 0;
+	padding: 0;
+	border: 0;
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 0.5em;
+}
+.rpa-field legend {
+	float: left;
+	width: 4.5em;
+	padding: 0;
+	font-weight: 600;
+}
+.rpa-field label {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3em;
+	margin: 0;
+}
+.rpa-field input[type="number"] {
+	width: 5.5em;
+	padding: 0.5em;
+}
+.rpa-field select {
+	width: 4.5em;
+	padding: 0.5em;
+}
+.rpa-note {
+	margin: 0.8em 0 0;
+	font-size: 0.85em;
+	opacity: 0.75;
+}
+.rpa-result {
+	margin: 1em 0 0.5em;
+}
+.rpa-summary {
+	margin: 0 0 0.3em;
+}
+.rpa-total {
+	margin: 0;
+	font-size: 1.15em;
+}
+.rpa-message {
+	min-height: 1.2em;
+	margin: 0.5em 0;
+	font-weight: 600;
+}
+.rpa-add[disabled] {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+@media ( max-width: 600px ) {
+	.rpa-body {
+		flex-direction: column;
+	}
+	.rpa-image {
+		flex-basis: auto;
+		max-width: 140px;
+	}
+}
