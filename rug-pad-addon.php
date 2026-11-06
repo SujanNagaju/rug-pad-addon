@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name:       Rug Pad Addon for WooCommerce
- * Description:       Offers a custom-size rug pad on the Cart and Checkout pages. Customers enter length and width, the price is calculated per square foot (dimensions round up to the next whole foot), and the pad is added to the cart and saved on the order with full details.
- * Version:           1.0.0
+ * Description:       Adds a "Need a rugpad? Click Here" link to the Cart and Checkout pages. Customers enter length and width, the price is calculated per square foot (dimensions round up to the next whole foot), and the selected rug pad product is added to the cart and saved on the order with full details.
+ * Version:           1.1.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Your Name
@@ -13,7 +13,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'RPA_VERSION', '1.0.0' );
+define( 'RPA_VERSION', '1.1.0' );
 define( 'RPA_FILE', __FILE__ );
 define( 'RPA_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RPA_URL', plugin_dir_url( __FILE__ ) );
@@ -21,8 +21,6 @@ define( 'RPA_URL', plugin_dir_url( __FILE__ ) );
 require_once RPA_DIR . 'includes/class-rpa-settings.php';
 
 final class RPA_Plugin {
-
-	const PRODUCT_OPTION = 'rpa_product_id';
 
 	/** @var RPA_Plugin */
 	private static $instance;
@@ -41,8 +39,6 @@ final class RPA_Plugin {
 	}
 
 	private function __construct() {
-		register_activation_hook( RPA_FILE, array( __CLASS__, 'activate' ) );
-
 		add_action( 'plugins_loaded', array( $this, 'init' ) );
 		add_action( 'before_woocommerce_init', array( $this, 'declare_compat' ) );
 	}
@@ -51,12 +47,6 @@ final class RPA_Plugin {
 		if ( class_exists( '\Automattic\WooCommerce\Utilities\FeaturesUtil' ) ) {
 			\Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'custom_order_tables', RPA_FILE, true );
 			\Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'cart_checkout_blocks', RPA_FILE, true );
-		}
-	}
-
-	public static function activate() {
-		if ( class_exists( 'WooCommerce' ) ) {
-			self::instance()->get_product_id();
 		}
 	}
 
@@ -70,10 +60,11 @@ final class RPA_Plugin {
 
 		RPA_Settings::init();
 
-		// Section output: classic cart / checkout.
+		// Output: classic cart (with items / empty) and checkout.
 		add_action( 'woocommerce_before_cart_collaterals', array( $this, 'render_cart_section' ) );
+		add_action( 'woocommerce_cart_is_empty', array( $this, 'render_cart_section' ), 20 );
 		add_action( 'woocommerce_before_checkout_form', array( $this, 'render_checkout_section' ), 20 );
-		// Section output: Cart / Checkout blocks.
+		// Output: Cart / Checkout blocks.
 		add_filter( 'render_block', array( $this, 'render_block_section' ), 10, 2 );
 		// Manual placement.
 		add_shortcode( 'rug_pad_addon', array( $this, 'shortcode' ) );
@@ -88,54 +79,35 @@ final class RPA_Plugin {
 		add_filter( 'woocommerce_get_item_data', array( $this, 'cart_item_data' ), 10, 2 );
 		add_action( 'woocommerce_before_calculate_totals', array( $this, 'set_cart_prices' ), 20 );
 		add_filter( 'woocommerce_cart_item_quantity', array( $this, 'lock_quantity' ), 10, 3 );
+		add_filter( 'woocommerce_store_api_product_quantity_editable', array( $this, 'store_api_quantity_editable' ), 10, 3 );
+		add_filter( 'woocommerce_store_api_product_quantity_maximum', array( $this, 'store_api_quantity_maximum' ), 10, 3 );
 
 		// Order.
 		add_action( 'woocommerce_checkout_create_order_line_item', array( $this, 'save_order_item_meta' ), 10, 4 );
-		add_filter( 'woocommerce_order_item_display_meta_key', array( $this, 'pretty_meta_key' ), 10, 2 );
-
-		// Keep the helper product out of the storefront.
-		add_action( 'template_redirect', array( $this, 'block_product_page' ) );
-		add_filter( 'woocommerce_product_is_visible', array( $this, 'hide_from_catalog' ), 10, 2 );
 	}
 
 	/* ------------------------------------------------------------------
-	 * Helper product
+	 * Rug pad products (chosen in settings)
 	 * ---------------------------------------------------------------- */
 
-	public function get_product_id() {
-		$id = (int) get_option( self::PRODUCT_OPTION );
-		if ( $id && 'product' === get_post_type( $id ) && 'trash' !== get_post_status( $id ) ) {
-			return $id;
-		}
-
-		$product = new WC_Product_Simple();
-		$product->set_name( __( 'Rug Pad', 'rug-pad-addon' ) );
-		$product->set_status( 'publish' );
-		$product->set_catalog_visibility( 'hidden' );
-		$product->set_virtual( true );
-		$product->set_sold_individually( true );
-		$product->set_regular_price( '0' );
-		$product->set_tax_status( 'taxable' );
-		$product->set_short_description( __( 'Premium non-slip rug pad, cut to the exact size you need. Keeps your rug in place and protects your floors.', 'rug-pad-addon' ) );
-		$id = $product->save();
-
-		update_option( self::PRODUCT_OPTION, $id );
-		return $id;
-	}
-
 	private function is_pad_product( $product_id ) {
-		return (int) $product_id === (int) get_option( self::PRODUCT_OPTION );
+		return in_array( (int) $product_id, RPA_Settings::product_ids(), true );
 	}
 
-	public function hide_from_catalog( $visible, $product_id ) {
-		return $this->is_pad_product( $product_id ) ? false : $visible;
-	}
-
-	public function block_product_page() {
-		if ( is_singular( 'product' ) && $this->is_pad_product( get_queried_object_id() ) && ! current_user_can( 'manage_woocommerce' ) ) {
-			wp_safe_redirect( wc_get_cart_url() );
-			exit;
+	/**
+	 * Selected products that can currently be bought.
+	 *
+	 * @return WC_Product[]
+	 */
+	private function get_pad_products() {
+		$products = array();
+		foreach ( RPA_Settings::product_ids() as $id ) {
+			$p = wc_get_product( $id );
+			if ( $p && $p->is_purchasable() && $p->is_in_stock() ) {
+				$products[] = $p;
+			}
 		}
+		return $products;
 	}
 
 	/* ------------------------------------------------------------------
@@ -187,16 +159,21 @@ final class RPA_Plugin {
 		$price = round( $area * $rate, wc_get_price_decimals() );
 
 		return array(
-			'length_ft'   => (int) $length_ft,
-			'length_in'   => (int) $length_in,
-			'width_ft'    => (int) $width_ft,
-			'width_in'    => (int) $width_in,
-			'length'      => $length,
-			'width'       => $width,
-			'area'        => $area,
-			'rate'        => $rate,
-			'price'       => $price,
+			'length_ft' => (int) $length_ft,
+			'length_in' => (int) $length_in,
+			'width_ft'  => (int) $width_ft,
+			'width_in'  => (int) $width_in,
+			'length'    => $length,
+			'width'     => $width,
+			'area'      => $area,
+			'rate'      => $rate,
+			'price'     => $price,
 		);
+	}
+
+	/** Plain-text price (e.g. "$2.00") for cart/order meta, so emails and exports show no HTML entities. */
+	private static function money_text( $amount ) {
+		return html_entity_decode( wp_strip_all_tags( wc_price( $amount ) ), ENT_QUOTES, 'UTF-8' );
 	}
 
 	private static function format_size( $feet, $inches ) {
@@ -214,6 +191,11 @@ final class RPA_Plugin {
 	public function ajax_add_pad() {
 		check_ajax_referer( 'rpa_add_pad', 'nonce' );
 
+		$product_id = isset( $_POST['product_id'] ) ? absint( wp_unslash( $_POST['product_id'] ) ) : 0;
+		if ( ! $this->is_pad_product( $product_id ) ) {
+			wp_send_json_error( array( 'message' => __( 'Please choose a valid rug pad.', 'rug-pad-addon' ) ), 400 );
+		}
+
 		$data = self::calculate(
 			isset( $_POST['length_ft'] ) ? wp_unslash( $_POST['length_ft'] ) : '',
 			isset( $_POST['length_in'] ) ? wp_unslash( $_POST['length_in'] ) : 0,
@@ -227,7 +209,7 @@ final class RPA_Plugin {
 
 		$this->adding = true;
 		$key          = WC()->cart->add_to_cart(
-			$this->get_product_id(),
+			$product_id,
 			1,
 			0,
 			array(),
@@ -239,7 +221,11 @@ final class RPA_Plugin {
 		$this->adding = false;
 
 		if ( ! $key ) {
-			wp_send_json_error( array( 'message' => __( 'Could not add the rug pad to your cart. Please try again.', 'rug-pad-addon' ) ), 500 );
+			// Surface WooCommerce's reason (e.g. out of stock) and don't leave stale notices behind.
+			$errors = wc_get_notices( 'error' );
+			wc_clear_notices();
+			$reason = $errors ? wp_strip_all_tags( is_array( $errors[0] ) ? $errors[0]['notice'] : $errors[0] ) : __( 'Could not add the rug pad to your cart. Please try again.', 'rug-pad-addon' );
+			wp_send_json_error( array( 'message' => $reason ), 500 );
 		}
 
 		WC()->cart->calculate_totals();
@@ -247,10 +233,10 @@ final class RPA_Plugin {
 		wp_send_json_success( array( 'message' => __( 'Rug pad added to your order.', 'rug-pad-addon' ) ) );
 	}
 
-	/** Only allow the pad to enter the cart through our calculator. */
+	/** Pads can only enter the cart through the size calculator (their base price is not the real price). */
 	public function validate_add_to_cart( $passed, $product_id ) {
 		if ( $this->is_pad_product( $product_id ) && ! $this->adding ) {
-			wc_add_notice( __( 'Rug pads must be added with the size calculator in your cart.', 'rug-pad-addon' ), 'error' );
+			wc_add_notice( __( 'Rug pads are sold by size. Please use the “Need a rugpad?” link in your cart to enter the dimensions.', 'rug-pad-addon' ), 'error' );
 			return false;
 		}
 		return $passed;
@@ -274,6 +260,20 @@ final class RPA_Plugin {
 		return $quantity_html;
 	}
 
+	public function store_api_quantity_editable( $editable, $product = null, $cart_item = null ) {
+		if ( is_array( $cart_item ) && isset( $cart_item['rpa_data'] ) ) {
+			return false;
+		}
+		return $editable;
+	}
+
+	public function store_api_quantity_maximum( $max, $product = null, $cart_item = null ) {
+		if ( is_array( $cart_item ) && isset( $cart_item['rpa_data'] ) ) {
+			return 1;
+		}
+		return $max;
+	}
+
 	public function cart_item_data( $item_data, $cart_item ) {
 		if ( empty( $cart_item['rpa_data'] ) ) {
 			return $item_data;
@@ -292,7 +292,7 @@ final class RPA_Plugin {
 			/* translators: %d: square feet */
 			'value' => sprintf( __( '%d sq ft', 'rug-pad-addon' ), $d['area'] ),
 		);
-		$item_data[] = array( 'key' => __( 'Price per sq ft', 'rug-pad-addon' ), 'value' => wp_strip_all_tags( wc_price( $d['rate'] ) ) );
+		$item_data[] = array( 'key' => __( 'Price per sq ft', 'rug-pad-addon' ), 'value' => self::money_text( $d['rate'] ) );
 
 		return $item_data;
 	}
@@ -314,8 +314,8 @@ final class RPA_Plugin {
 		$item->add_meta_data( __( 'Billed size', 'rug-pad-addon' ), sprintf( __( '%1$d ft × %2$d ft', 'rug-pad-addon' ), $d['length'], $d['width'] ), true );
 		/* translators: %d: square feet */
 		$item->add_meta_data( __( 'Total area', 'rug-pad-addon' ), sprintf( __( '%d sq ft', 'rug-pad-addon' ), $d['area'] ), true );
-		$item->add_meta_data( __( 'Price per sq ft', 'rug-pad-addon' ), wp_strip_all_tags( wc_price( $d['rate'] ) ), true );
-		$item->add_meta_data( __( 'Pad total', 'rug-pad-addon' ), wp_strip_all_tags( wc_price( $d['price'] ) ), true );
+		$item->add_meta_data( __( 'Price per sq ft', 'rug-pad-addon' ), self::money_text( $d['rate'] ), true );
+		$item->add_meta_data( __( 'Pad total', 'rug-pad-addon' ), self::money_text( $d['price'] ), true );
 
 		// Hidden raw values for reporting / exports.
 		$item->add_meta_data( '_rpa_length_ft', $d['length_ft'], true );
@@ -329,10 +329,6 @@ final class RPA_Plugin {
 		$item->add_meta_data( '_rpa_total', $d['price'], true );
 	}
 
-	public function pretty_meta_key( $display_key, $meta ) {
-		return $display_key;
-	}
-
 	/* ------------------------------------------------------------------
 	 * Front-end output
 	 * ---------------------------------------------------------------- */
@@ -341,16 +337,12 @@ final class RPA_Plugin {
 		if ( ! RPA_Settings::get( 'show_on_' . $context ) ) {
 			return false;
 		}
-		if ( ! WC()->cart || WC()->cart->is_empty() ) {
+		if ( ! RPA_Settings::product_ids() || ! WC()->cart ) {
 			return false;
 		}
-		if ( RPA_Settings::get( 'require_other_items' ) ) {
-			foreach ( WC()->cart->get_cart() as $item ) {
-				if ( ! isset( $item['rpa_data'] ) ) {
-					return true;
-				}
-			}
-			return false;
+		if ( WC()->cart->is_empty() ) {
+			// An empty cart only offers the link on the cart page, so a pad can be bought on its own.
+			return 'cart' === $context && (bool) RPA_Settings::get( 'show_when_empty' );
 		}
 		return true;
 	}
@@ -371,11 +363,14 @@ final class RPA_Plugin {
 		if ( empty( $block['blockName'] ) ) {
 			return $content;
 		}
+		// IMPORTANT: append, never prepend. WooCommerce's Cart/Checkout blocks fail to mount
+		// (the page stays on the loading skeleton) if anything is output before the block's
+		// root element. The script moves the section above the block once the block has loaded.
 		if ( 'woocommerce/cart' === $block['blockName'] && $this->should_show( 'cart' ) ) {
-			return $this->get_section_html() . $content;
+			return $content . $this->get_section_html();
 		}
 		if ( 'woocommerce/checkout' === $block['blockName'] && $this->should_show( 'checkout' ) ) {
-			return $this->get_section_html() . $content;
+			return $content . $this->get_section_html();
 		}
 		return $content;
 	}
@@ -388,13 +383,13 @@ final class RPA_Plugin {
 		if ( $this->rendered ) {
 			return '';
 		}
-		$this->rendered = true;
 
-		$product  = wc_get_product( $this->get_product_id() );
-		if ( ! $product ) {
+		$products = $this->get_pad_products();
+		if ( ! $products ) {
 			return '';
 		}
-		$settings = RPA_Settings::all();
+		$this->rendered = true;
+		$settings       = RPA_Settings::all();
 
 		wp_enqueue_style( 'rpa-style' );
 		wp_enqueue_script( 'rpa-script' );
@@ -412,23 +407,23 @@ final class RPA_Plugin {
 			'rpa-script',
 			'rpaData',
 			array(
-				'ajaxUrl'   => WC_AJAX::get_endpoint( 'rpa_add_pad' ),
-				'nonce'     => wp_create_nonce( 'rpa_add_pad' ),
-				'rate'      => (float) RPA_Settings::get( 'price_per_sqft' ),
-				'maxDim'    => (int) RPA_Settings::get( 'max_dimension' ),
-				'currency'  => array(
-					'symbol'   => get_woocommerce_currency_symbol(),
+				'ajaxUrl'  => WC_AJAX::get_endpoint( 'rpa_add_pad' ),
+				'nonce'    => wp_create_nonce( 'rpa_add_pad' ),
+				'rate'     => (float) RPA_Settings::get( 'price_per_sqft' ),
+				'maxDim'   => (int) RPA_Settings::get( 'max_dimension' ),
+				'currency' => array(
+					'symbol'   => html_entity_decode( get_woocommerce_currency_symbol(), ENT_QUOTES, 'UTF-8' ), // e.g. "&#36;" => "$".
 					'format'   => get_woocommerce_price_format(),
 					'decimals' => wc_get_price_decimals(),
 					'decSep'   => wc_get_price_decimal_separator(),
 					'thouSep'  => wc_get_price_thousand_separator(),
 				),
-				'i18n'      => array(
-					'enter'    => __( 'Enter the length and width to see the price.', 'rug-pad-addon' ),
-					'tooBig'   => __( 'Maximum size is %d feet per side.', 'rug-pad-addon' ),
-					'adding'   => __( 'Adding…', 'rug-pad-addon' ),
-					'error'    => __( 'Something went wrong. Please try again.', 'rug-pad-addon' ),
-					'summary'  => __( 'Billed size: %1$s ft × %2$s ft = %3$s sq ft', 'rug-pad-addon' ),
+				'i18n'     => array(
+					'enter'   => __( 'Enter the length and width to see the price.', 'rug-pad-addon' ),
+					'tooBig'  => __( 'Maximum size is %d feet per side.', 'rug-pad-addon' ),
+					'adding'  => __( 'Adding…', 'rug-pad-addon' ),
+					'error'   => __( 'Something went wrong. Please try again.', 'rug-pad-addon' ),
+					'summary' => __( 'Billed size: %1$s ft × %2$s ft = %3$s sq ft', 'rug-pad-addon' ),
 				),
 			)
 		);

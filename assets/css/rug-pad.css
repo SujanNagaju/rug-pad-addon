@@ -1,23 +1,49 @@
 .rpa-addon {
 	box-sizing: border-box;
 	margin: 0 0 2em;
-	padding: 1.5em;
-	border: 1px solid #dcdcde;
-	border-radius: 8px;
-	background: #fafafa;
 }
 .rpa-addon *,
 .rpa-addon *::before,
 .rpa-addon *::after {
 	box-sizing: border-box;
 }
+.rpa-addon [hidden] {
+	display: none !important;
+}
+.rpa-prompt {
+	margin: 0 0 0.75em;
+	font-size: 1.05em;
+}
+.rpa-toggle {
+	font-weight: 700;
+	text-decoration: underline;
+	cursor: pointer;
+}
+.rpa-panel {
+	padding: 1.5em;
+	border: 1px solid #dcdcde;
+	border-radius: 8px;
+	background: #fafafa;
+}
 .rpa-heading {
 	margin: 0 0 1em;
 }
-.rpa-body {
+.rpa-choose {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.6em;
+	margin: 0 0 1em;
+}
+.rpa-choose select {
+	padding: 0.5em;
+	max-width: 100%;
+}
+.rpa-product {
 	display: flex;
 	gap: 1.5em;
 	align-items: flex-start;
+	margin-bottom: 1em;
 }
 .rpa-image {
 	flex: 0 0 180px;
@@ -29,7 +55,7 @@
 	height: auto;
 	border-radius: 6px;
 }
-.rpa-details {
+.rpa-info {
 	flex: 1;
 	min-width: 0;
 }
@@ -102,7 +128,7 @@
 }
 
 @media ( max-width: 600px ) {
-	.rpa-body {
+	.rpa-product {
 		flex-direction: column;
 	}
 	.rpa-image {

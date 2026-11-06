@@ -10,7 +10,10 @@
 	var $ = function ( sel ) {
 		return root.querySelector( sel );
 	};
-	var lenFt = $( '#rpa-length-ft' ),
+	var toggle = $( '.rpa-toggle' ),
+		panel = $( '#rpa-panel' ),
+		productEl = $( '#rpa-product' ),
+		lenFt = $( '#rpa-length-ft' ),
 		lenIn = $( '#rpa-length-in' ),
 		widFt = $( '#rpa-width-ft' ),
 		widIn = $( '#rpa-width-in' ),
@@ -69,14 +72,42 @@
 		btn.disabled = false;
 	}
 
+	/** Show the "Click Here" form. */
+	function togglePanel( e ) {
+		e.preventDefault();
+		var open = panel.hasAttribute( 'hidden' );
+		if ( open ) {
+			panel.removeAttribute( 'hidden' );
+		} else {
+			panel.setAttribute( 'hidden', '' );
+		}
+		toggle.setAttribute( 'aria-expanded', open ? 'true' : 'false' );
+		if ( open ) {
+			lenFt.focus();
+		}
+	}
+
+	/** With several rug pad products, show the chosen product's image and description. */
+	function showProduct() {
+		var id = productEl.value;
+		var items = root.querySelectorAll( '.rpa-product' );
+		for ( var i = 0; i < items.length; i++ ) {
+			if ( items[ i ].getAttribute( 'data-product' ) === id ) {
+				items[ i ].removeAttribute( 'hidden' );
+			} else {
+				items[ i ].setAttribute( 'hidden', '' );
+			}
+		}
+	}
+
 	/** Refresh the cart / checkout so totals include the new pad. */
 	function refresh() {
 		try {
 			var wp = window.wp;
 			if ( wp && wp.data && wp.data.dispatch && wp.data.select( 'wc/store/cart' ) ) {
-				// Cart / Checkout blocks.
+				// Cart / Checkout blocks: reload so totals, shipping and the empty-cart state all re-render.
 				wp.data.dispatch( 'wc/store/cart' ).invalidateResolutionForStore();
-				window.location.reload(); // Re-renders the section's visibility rules too.
+				window.location.reload();
 				return;
 			}
 		} catch ( e ) {}
@@ -88,7 +119,7 @@
 			resetForm();
 			return;
 		}
-		window.location.reload(); // Classic cart.
+		window.location.reload(); // Classic cart (including from an empty cart).
 	}
 
 	function resetForm() {
@@ -107,6 +138,7 @@
 
 		var body = new URLSearchParams();
 		body.append( 'nonce', cfg.nonce );
+		body.append( 'product_id', productEl.value );
 		body.append( 'length_ft', v.lf );
 		body.append( 'length_in', v.li );
 		body.append( 'width_ft', v.wf );
@@ -142,7 +174,37 @@
 		el.addEventListener( 'input', update );
 		el.addEventListener( 'change', update );
 	} );
+	toggle.addEventListener( 'click', togglePanel );
+	productEl.addEventListener( 'change', showProduct );
 	btn.addEventListener( 'click', add );
+
+	/**
+	 * Cart/Checkout blocks: the section is printed after the block (printing it before breaks
+	 * the block). Once the block has finished loading, move the section above it.
+	 */
+	function placeAboveBlock() {
+		var block = root.previousElementSibling;
+		if ( ! block || ! block.classList || ( ! block.classList.contains( 'wp-block-woocommerce-checkout' ) && ! block.classList.contains( 'wp-block-woocommerce-cart' ) ) ) {
+			return; // Classic pages or shortcode: already in the right place.
+		}
+		var moved = false;
+		function move() {
+			if ( moved || block.classList.contains( 'is-loading' ) ) {
+				return;
+			}
+			moved = true;
+			observer.disconnect();
+			block.parentNode.insertBefore( root, block );
+		}
+		var observer = new MutationObserver( move );
+		observer.observe( block, { attributes: true, attributeFilter: [ 'class' ] } );
+		window.setTimeout( function () {
+			// Safety net: keep the section where it is if the block never finishes loading.
+			observer.disconnect();
+		}, 30000 );
+		move();
+	}
+	placeAboveBlock();
 
 	update();
 } )();
